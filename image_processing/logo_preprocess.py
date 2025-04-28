@@ -1,5 +1,6 @@
 import hashlib
 import io, numpy as np
+import os
 import sys
 import tempfile
 from functools import lru_cache
@@ -174,7 +175,9 @@ def logo_to_url(
 
     # 5. Return the URL the rest of your app (or a 3rd-party component)
     #    can use.  /static/... works both locally and on Streamlit Cloud.
-    url = get_base_url() + f"/app/static/{fname}"
+    dev_deployment = os.getenv("DEPLOYMENT") == "dev"
+    prefix = "/app/static/" if dev_deployment else "/static/"  # I have no idea why
+    url = get_base_url() + f"{prefix}{fname}"
     return url
 
 
