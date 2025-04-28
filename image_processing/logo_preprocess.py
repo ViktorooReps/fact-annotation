@@ -165,7 +165,7 @@ def logo_to_url(
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
     digest = hashlib.sha256(buf.getvalue()).hexdigest()
-    fname = f"{digest}.png"
+    fname = f"hosted{digest}.png"
     fpath = static_dir / fname
 
     # 4. Write once, re-use thereafter
@@ -175,8 +175,7 @@ def logo_to_url(
     # 5. Return the URL the rest of your app (or a 3rd-party component)
     #    can use.  /static/... works both locally and on Streamlit Cloud.
     url = get_base_url() + f"/app/static/{fname}"
-    print("Hosting:", url)
     return url
 
 
-NO_IMG_THUMB = "data/no_img.png"
+NO_IMG_THUMB = "static/no_img.png"

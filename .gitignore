@@ -1,4 +1,4 @@
 .streamlit/secrets.toml
 .venv/
-static/
+static/hosted*
 .idea
