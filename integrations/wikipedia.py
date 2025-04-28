@@ -159,7 +159,7 @@ async def entity_lookup(
     term: str,
     *,
     lang: str = "en",
-    limit: int = 10,
+    limit: int = 5,
 ) -> List[Dict[str, Optional[str]]]:
     """Return up to *limit* candidate entities for *term*.
 
@@ -201,7 +201,7 @@ async def entity_lookup(
         return results
 
 
-def entity_lookup_sync(term: str, *, lang: str = "en", limit: int = 10):
+def entity_lookup_sync(term: str, *, lang: str = "en", limit: int = 5):
     """Blocking convenience wrapper for scripts that are not async‑aware."""
     try:
         return asyncio.run(entity_lookup(term, lang=lang, limit=limit))

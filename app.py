@@ -134,6 +134,8 @@ if auto_sheet_id:
     with data_selection_container:
         @st.fragment()
         def gs_update():
+            global selected_ws
+
             # layout: selector + refresh button side‑by‑side
             refresh_col, ws_col, save_col = st.columns([1, 11, 11], vertical_alignment="bottom")
             info_container = st.container()
@@ -191,6 +193,8 @@ if auto_sheet_id:
 
 def init_dataframe() -> pd.DataFrame | None:
     """Return a DataFrame from chosen source or None if unavailable."""
+
+    print(use_gs, auto_sheet_id, selected_ws)
     if use_gs and auto_sheet_id and selected_ws:
         try:
             st.session_state.gs_synced = True
@@ -221,6 +225,8 @@ if (
         st.session_state.df = df_loaded
         st.session_state._source_sig = source_signature
         st.session_state.pop("row_selector", None)
+    else:
+        st.error("Unexpected error!")
 
 # ---------------------------------------------------------------------------
 # 4. Annotation UI -----------------------------------------------------------

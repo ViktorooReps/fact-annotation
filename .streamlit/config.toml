@@ -1,4 +1,4 @@
 [server]
 enableStaticServing=true
 port = 9999
-baseUrlPath = ""
+baseUrlPath = "fact-annotator"

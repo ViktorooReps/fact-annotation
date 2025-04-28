@@ -9,7 +9,7 @@ def get_base_url():
     deployment = os.getenv("DEPLOYMENT")
 
     if deployment == "dev":
-        base_url = f"http://localhost:{port}"
+        base_url = f"http://localhost:{port}/{base_url}" if base_url else f"http://localhost:{port}"
     else:
         # assume to be hosted on streamlit
         base_url = f"http://{base_url}.streamlit.io"
