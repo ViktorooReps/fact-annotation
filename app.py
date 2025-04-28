@@ -305,7 +305,7 @@ if "df" in st.session_state:
             df["Completed"] = df["Completed"].astype(bool)
 
         entity_types = get_entity_types(df.columns)
-        if "entity_types" not in st.session_state:
+        if "entity_types" not in st.session_state or st.session_state.entity_types is None:
             st.session_state.entity_types = entity_types
         else:
             for entity_type in st.session_state.entity_types:
@@ -315,7 +315,7 @@ if "df" in st.session_state:
         st.session_state.entity_types = sorted(set(st.session_state.entity_types))
 
         relation_types = get_relation_types(df.columns)
-        if "relation_types" not in st.session_state:
+        if "relation_types" not in st.session_state or st.session_state.relation_types is None:
             st.session_state.relation_types = relation_types
         else:
             for relation_type in st.session_state.relation_types:
