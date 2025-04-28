@@ -1,4 +1,6 @@
 .streamlit/secrets.toml
 .venv/
+.venv-test/
 static/hosted*
 .idea
+*/__pychache__/*
