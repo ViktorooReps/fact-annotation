@@ -1,0 +1,4 @@
+[server]
+enableStaticServing=true
+port = 9999
+baseUrlPath = ""
