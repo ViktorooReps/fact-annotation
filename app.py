@@ -223,8 +223,6 @@ if (
         st.session_state.df = df_loaded
         st.session_state._source_sig = source_signature
         st.session_state.pop("row_selector", None)
-    else:
-        st.error("Unexpected error!")
 
 # ---------------------------------------------------------------------------
 # 4. Annotation UI -----------------------------------------------------------
