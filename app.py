@@ -193,8 +193,6 @@ if auto_sheet_id:
 
 def init_dataframe() -> pd.DataFrame | None:
     """Return a DataFrame from chosen source or None if unavailable."""
-
-    print(use_gs, auto_sheet_id, selected_ws)
     if use_gs and auto_sheet_id and selected_ws:
         try:
             st.session_state.gs_synced = True
