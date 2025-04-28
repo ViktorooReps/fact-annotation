@@ -2,7 +2,6 @@ import hashlib
 import io, numpy as np
 import os
 import sys
-import tempfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -10,7 +9,6 @@ import streamlit as st
 from PIL import Image
 from scipy.ndimage import distance_transform_edt
 
-from commons.deployment import get_base_url
 from image_processing.download import load_from_url
 
 
@@ -176,9 +174,12 @@ def logo_to_url(
     # 5. Return the URL the rest of your app (or a 3rd-party component)
     #    can use.  /static/... works both locally and on Streamlit Cloud.
     dev_deployment = os.getenv("DEPLOYMENT") == "dev"
-    prefix = "/app/static/" if dev_deployment else "/static/"  # I have no idea why
-    url = get_base_url() + f"{prefix}{fname}"
-    return url
+    if dev_deployment:
+        base_url = "http://localhost:8501/"
+    else:
+        base_url = "https://fact-annotation.streamlit.app/"
+
+    return f"{base_url}app/static/{fname}"
 
 
 NO_IMG_THUMB = "static/no_img.png"
