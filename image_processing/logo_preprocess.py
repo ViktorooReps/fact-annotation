@@ -173,12 +173,7 @@ def logo_to_url(
 
     # 5. Return the URL the rest of your app (or a 3rd-party component)
     #    can use.  /static/... works both locally and on Streamlit Cloud.
-    dev_deployment = os.getenv("DEPLOYMENT") == "dev"
-    if dev_deployment:
-        base_url = "http://localhost:8501/"
-    else:
-        base_url = "https://fact-annotation.streamlit.app/"
-
+    base_url = "http://localhost:8501/"
     return f"{base_url}app/static/{fname}"
 
 
