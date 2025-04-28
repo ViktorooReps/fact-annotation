@@ -5,7 +5,7 @@ import streamlit
 
 def get_base_url():
     base_url = streamlit.get_option("server.baseUrlPath")
-    port = streamlit.get_option("server.port")
+    port = streamlit.get_option("server.port") or 8501
     deployment = os.getenv("DEPLOYMENT")
     app_name = os.getenv("APP_NAME")
 
