@@ -20,9 +20,6 @@ Turn any CSV or Google Sheet full of free-text statements into a mini knowledge 
 
 ```bash
 git clone https://github.com/ViktorooReps/fact-annotation
-```
-
-```bash
 cd fact-annotation
 ```
 
@@ -30,9 +27,6 @@ cd fact-annotation
 Create & activate a virtual environment
 ```bash
 python3.11 -m venv .venv
-```
-
-```bash
 source .venv/bin/activate         # Windows: .venv\Scripts\activate
 ```
 
