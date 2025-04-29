@@ -535,7 +535,6 @@ if "df" in st.session_state:
                     "Row index",
                     min_value=0,
                     max_value=max_row,
-                    value=st.session_state.row_selector,
                     step=1,
                     key="row_selector",
                     format="%d",
