@@ -46,7 +46,7 @@ Launch the app
 streamlit run app.py
 ```
 
-# Optional: enable Google Sheets as a backend
+## Optional: enable Google Sheets as a backend
 
 Create a Service Account in the Google Cloud console
 * enable the Google Sheets API
