@@ -1,7 +1,7 @@
 from commons.datamodel import Entity, BiDirectionalRelation
 from streamlit_agraph import agraph, Node, Edge, Config
 
-from image_processing.logo_preprocess import logo_to_url
+from image_processing.logo_preprocess import logo_to_url, NO_IMG_THUMB
 
 import streamlit as st
 
@@ -34,7 +34,7 @@ def draw_entity_graph(entities: list[Entity], relations: list[BiDirectionalRelat
 
     nodes = []
     for entity in entities:
-        if entity.thumbnail is not None:
+        if entity.thumbnail is not None and entity.thumbnail != NO_IMG_THUMB:
             nodes.append(Node(
                 id=entity.id,
                 title=f"Description: {entity.description}\n"

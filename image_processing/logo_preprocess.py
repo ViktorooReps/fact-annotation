@@ -12,6 +12,9 @@ from scipy.ndimage import distance_transform_edt
 from image_processing.download import load_from_url
 
 
+NO_IMG_THUMB = "static/no_img.png"
+
+
 @lru_cache()
 def _app_root() -> Path:
     """
@@ -175,6 +178,3 @@ def logo_to_url(
     #    can use.  /static/... works both locally and on Streamlit Cloud.
     base_url = "http://localhost:8501/"
     return f"{base_url}app/static/{fname}"
-
-
-NO_IMG_THUMB = "static/no_img.png"

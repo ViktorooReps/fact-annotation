@@ -352,12 +352,7 @@ if "df" in st.session_state:
                 df[column_name].explode().dropna().tolist()
             )
 
-        def add_collab(d):
-            d = copy.deepcopy(d)
-            d["type"] = "COLLAB"
-            return d
-
-        global_relations = disambiguate_relations([BiDirectionalRelation(**add_collab(rel_dict)) for rel_dict in global_rel_dicts])
+        global_relations = disambiguate_relations([BiDirectionalRelation(**rel_dict) for rel_dict in global_rel_dicts])
         id_pair2global_relations = defaultdict(int)
         for rel in global_relations:
             id_pair = (rel.from_id, rel.to_id)
@@ -486,12 +481,21 @@ if "df" in st.session_state:
                     with entity_add_columns[0]:
                         st.text_input("New entity type", key="new_entity_type_name")
 
-                    def _empty_entity():
-                        st.session_state.entity_types.append(st.session_state.new_entity_type_name)
-                        st.session_state.new_entity_type_name = ''
+                    new_type = st.session_state.new_entity_type_name
+                    disabled_ent_type = (not new_type) or new_type in st.session_state.entity_types
+
+                    def _submit_entity_type():
+                        st.session_state.entity_types.append(st.session_state.add_entity_type)
+                        st.session_state.add_entity_type = ''
 
                     with entity_add_columns[1]:
-                        st.button(":material/add:", key="add_entity_type", type="primary", on_click=_empty_entity)
+                        st.button(
+                            ":material/add:",
+                            key="add_entity_type",
+                            type="primary",
+                            on_click=_submit_entity_type,
+                            disabled=disabled_ent_type,
+                        )
 
                 relation_types_columns = st.columns([2, 1])
                 with relation_types_columns[0]:
@@ -502,12 +506,21 @@ if "df" in st.session_state:
                     with relation_add_columns[0]:
                         st.text_input("New relation type", key="new_relation_type_name")
 
-                    def _empty_relation():
+                    new_type = st.session_state.new_relation_type_name
+                    disabled_rel_type = (not new_type) or new_type in st.session_state.relation_types
+
+                    def _submit_relation_type():
                         st.session_state.relation_types.append(st.session_state.new_relation_type_name)
                         st.session_state.new_relation_type_name = ''
 
                     with relation_add_columns[1]:
-                        st.button(":material/add:", key="add_relation_type", type="primary", on_click=_empty_relation)
+                        st.button(
+                            ":material/add:",
+                            key="add_relation_type",
+                            type="primary",
+                            on_click=_submit_relation_type,
+                            disabled=disabled_rel_type
+                        )
 
         first_open_row = (
             int(df.index[df["Completed"] == False][0])
@@ -587,13 +600,13 @@ if "df" in st.session_state:
             column_name = f"{rel}_relation"
             local_rel_dicts.extend(df.at[st.session_state.row_selector, column_name])
 
-        local_relations = disambiguate_relations([BiDirectionalRelation(**add_collab(rel_dict)) for rel_dict in local_rel_dicts])
+        local_relations = disambiguate_relations([BiDirectionalRelation(**rel_dict) for rel_dict in local_rel_dicts])
 
         # store disambiguated relations in the df
         for rel_type in st.session_state.relation_types:
             column_name = f"{rel_type}_relation"
             filtered_relations = list(filter(lambda r: r.type == rel_type, local_relations))
-            current_relations = [BiDirectionalRelation(**add_collab(rel_dict)) for rel_dict in df.at[st.session_state.row_selector, column_name]]
+            current_relations = [BiDirectionalRelation(**rel_dict) for rel_dict in df.at[st.session_state.row_selector, column_name]]
             if True or tuple(sorted(filtered_relations)) != tuple(sorted(current_relations)):
                 df.at[st.session_state.row_selector, column_name] = [
                     dataclasses.asdict(rel) for rel in filtered_relations
