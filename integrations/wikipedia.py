@@ -16,6 +16,7 @@ __all__ = [
 ]
 
 from integrations.customsearch_api import get_organization_info, search_urls
+import streamlit as st
 
 # ---------------------------------------------------------------------------
 # Exceptions & logging
@@ -189,6 +190,7 @@ async def _enrich_entity(
 # Public API
 # ---------------------------------------------------------------------------
 
+@st.cache_data(show_spinner=False)
 async def entity_lookup(
     term: str,
     *,

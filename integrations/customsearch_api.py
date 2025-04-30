@@ -4,7 +4,10 @@ from urllib.parse import urljoin
 import aiohttp
 from bs4 import BeautifulSoup
 
+import streamlit as st
 
+
+@st.cache_data(show_spinner=False)
 async def search_urls(query: str, num_results: int = 1) -> list[str]:
     """
     Performs a Google Custom Search for the given query and returns
@@ -33,6 +36,7 @@ async def search_urls(query: str, num_results: int = 1) -> list[str]:
             ]
 
 
+@st.cache_data()
 async def get_organization_info(url: str, timeout: int = 10, max_retries: int = 1) -> dict:
     """
     Async version: Fetches an organization's logo URL and description from its homepage.
