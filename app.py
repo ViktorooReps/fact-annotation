@@ -12,6 +12,7 @@ from typing import List, Iterable
 from commons.datamodel import Entity, BiDirectionalRelation, merge_entities, disambiguate_entities, \
     disambiguate_relations, fuzzy_find_entity_by_alias
 from image_processing.logo_preprocess import logo_to_url, NO_IMG_THUMB
+from integrations.customsearch_api import search_urls, get_organization_info
 from widgets.entity_graph import draw_entity_graph
 from integrations.wikipedia import entity_lookup_sync
 
@@ -465,7 +466,6 @@ if "df" in st.session_state:
                     st.markdown(label + suffix)
 
         with data_view_container:
-            # st.subheader("Preview")
             show_columns = [col for col in df.columns if not filter_json_columns(col)]
             with st.expander("Data preview", expanded=True):
                 st.dataframe(df[show_columns], height=200)
@@ -677,12 +677,36 @@ if "df" in st.session_state:
                 with st.container(border=True):
                     entity_column, select_column = st.columns([5, 1])
 
-                entity_new = Entity(name=alias, type=entity_type, thumbnail=NO_IMG_THUMB)
+                with select_column:
+                    if "google_lookup" not in st.session_state:
+                        st.session_state.google_lookup = True
+                    google_lookup = st.pills(
+                        "Find",
+                        [True],
+                        key="google_lookup",
+                        help="Look up best match on Google",
+                        format_func=lambda _: ":material/search:",
+                    )
+
+                if google_lookup:
+                    url = search_urls(alias)[0]
+                    info = get_organization_info(url)
+                    entity_new = Entity(
+                        name=alias,
+                        type=entity_type,
+                        id=url,
+                        url=url,
+                        thumbnail=info["logo"],
+                        description=info["description"]
+                    )
+                else:
+                    entity_new = Entity(name=alias, type=entity_type, thumbnail=NO_IMG_THUMB)
+
                 with entity_column:
                     visualize_new_entity(entity_new)
 
                 with select_column:
-                    if st.button("New", key="create_new", on_click=partial(add_entity, e=entity_new)):
+                    if st.button(":material/add:", key="create_new", on_click=partial(add_entity, e=entity_new)):
                         st.rerun()
 
             def entity_option_widget(e: Entity, option_idx: int):
@@ -717,12 +741,10 @@ if "df" in st.session_state:
 
                                 entity_option_widget(option_with_new_alias, option_idx)
 
-                        new_entity_widget()
-
                 choose_entity()
 
             def _look_up_entity():
-                @st.dialog(f"Choose Wikipedia entity for {alias} ({entity_type})")
+                @st.dialog(f"Choose entity for {alias} ({entity_type})")
                 def choose_wiki_entity():
                     search_term = st.text_input(":material/language: Wikipedia search term:", value=alias)
                     options = entity_lookup_sync(search_term)
@@ -744,7 +766,7 @@ if "df" in st.session_state:
 
                                 entity_option_widget(entity_opt, option_idx)
 
-                        new_entity_widget()
+                    new_entity_widget()
 
                 choose_wiki_entity()
 

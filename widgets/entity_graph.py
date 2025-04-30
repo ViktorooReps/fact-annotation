@@ -53,7 +53,7 @@ def draw_entity_graph(entities: list[Entity], relations: list[BiDirectionalRelat
                       f"URL: {entity.url}",
                 shape="text",
                 font={
-                    "size": 25,
+                    "size": 15,
                     "color": "#000000" if theme != "dark" else "#FFFFFF",
                 },
                 size=50,

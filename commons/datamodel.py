@@ -125,7 +125,7 @@ def fuzzy_find_entity_by_alias(
     search_term: str,
     global_entities: list[Entity],
     *,
-    threshold: float = 0.60,
+    threshold: float = 0.00001,
 ) -> list[Entity]:
     """
     Return all entities whose *name* or *aliases* fuzzily match ``search_term``.

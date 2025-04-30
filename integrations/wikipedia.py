@@ -15,6 +15,8 @@ __all__ = [
     "entity_lookup_sync",
 ]
 
+from integrations.customsearch_api import get_organization_info, search_urls
+
 # ---------------------------------------------------------------------------
 # Exceptions & logging
 # ---------------------------------------------------------------------------
@@ -108,14 +110,8 @@ async def _enrich_entity(
     result: Dict[str, Any],
     lang: str,
 ) -> Dict[str, Optional[str]]:
-    """Attach logo/thumbnail + Wikipedia details to a raw *wbsearchentities* hit.
-
-    Any failures during enrichment are logged and re‑raised so the caller can
-    decide whether to keep or drop the entity.
-    """
     id_ = result["id"]
 
-    # --- claims ------------------------------------------------------------
     entities = await _fetch_json(
         session,
         "https://www.wikidata.org/w/api.php",
@@ -130,7 +126,9 @@ async def _enrich_entity(
     )
 
     claims = entities.get("entities", {}).get(id_, {}).get("claims", {})
-    logo_url: str | None = None
+
+    # logo (P154)
+    logo_url = None
     if "P154" in claims:
         try:
             logo_claim = claims["P154"][0]["mainsnak"].get("datavalue", {})
@@ -139,15 +137,51 @@ async def _enrich_entity(
         except (KeyError, TypeError) as exc:
             logger.debug("Malformed logo claim for %s: %s", id_, exc)
 
-    # --- Wikipedia summary --------------------------------------------------
-    wiki_card = await wiki_lookup(session, result["label"])
+    # official website (P856)
+    official_site = None
+    if "P856" in claims:
+        try:
+            site_claim = claims["P856"][0]["mainsnak"].get("datavalue", {})
+            if site_claim:
+                official_site = site_claim["value"]
+        except (KeyError, TypeError) as exc:
+            logger.debug("Malformed official website claim for %s: %s", id_, exc)
+
+    name = result["label"]
+
+    # Wikipedia summary
+    wiki_card = await wiki_lookup(session, name)
+
+    # Fallback: search official URL if missing (not yet implemented)
+    if not official_site:
+        official_url = search_urls(name)[0]
+    else:
+        official_url = official_site
+
+    # Fetch description and logo from official URL if missing
+    if official_url:
+        org_info = get_organization_info(official_url)
+        if not result.get("description") and org_info.get("description"):
+            description = org_info["description"]
+        else:
+            description = result.get("description")
+        if not logo_url and org_info.get("logo"):
+            logo_url = org_info["logo"]
+    else:
+        description = result.get("description") or wiki_card.get("description")
+
+    # Final URL: prefer official, else wiki page
+    final_url = official_url or wiki_card.get("url")
+
+    # Final thumbnail: prefer logo, else wiki thumbnail
+    thumbnail = logo_url or wiki_card.get("thumbnail")
 
     return {
-        "name": result.get("label"),
+        "name": name,
         "id": id_,
-        "description": result.get("description"),
-        "url": wiki_card["url"],
-        "thumbnail": logo_url or wiki_card["thumbnail"],
+        "description": description,
+        "url": final_url,
+        "thumbnail": thumbnail,
     }
 
 
