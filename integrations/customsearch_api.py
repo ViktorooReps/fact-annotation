@@ -1,18 +1,16 @@
-import streamlit as st
-
-import requests
-from bs4 import BeautifulSoup
-import json
+import asyncio
 from urllib.parse import urljoin
 
+import aiohttp
+from bs4 import BeautifulSoup
 
-def search_urls(query: str, num_results: int = 1) -> list[str]:
+
+async def search_urls(query: str, num_results: int = 1) -> list[str]:
     """
     Performs a Google Custom Search for the given query and returns
     a list of result URLs (best matches), using credentials from Streamlit secrets.
     """
-    # Load API credentials from Streamlit secrets
-    creds = st.secrets["google_customsearch"]
+    creds = __import__("streamlit").secrets["google_customsearch"]
     api_key = creds.get("api_key")
     cse_id = creds.get("cse_id")
 
@@ -24,29 +22,20 @@ def search_urls(query: str, num_results: int = 1) -> list[str]:
         "num": num_results
     }
 
-    resp = requests.get(endpoint, params=params)
-    resp.raise_for_status()
-    data = resp.json()
+    async with aiohttp.ClientSession() as session:
+        async with session.get(endpoint, params=params) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            return [
+                item["link"]
+                for item in data.get("items", [])
+                if item.get("link")
+            ]
 
-    # Extract and return the direct link URLs
-    return [item["link"] for item in data.get("items", []) if item.get("link")]
 
-
-def get_organization_info(url, timeout=10, max_retries=1):
+async def get_organization_info(url: str, timeout: int = 10, max_retries: int = 1) -> dict:
     """
-    Fetches an organization's logo URL and description from its homepage.
-
-    Args:
-        url (str): The homepage URL of the organization.
-        timeout (int): Seconds to wait for the HTTP response.
-        max_retries (int): How many times to retry on 403/429 status.
-
-    Returns:
-        dict:
-            {
-                'logo':        Absolute URL to the logo image (or None),
-                'description': Organization description text (or None)
-            }
+    Async version: Fetches an organization's logo URL and description from its homepage.
     """
     headers = {
         "User-Agent": (
@@ -56,46 +45,48 @@ def get_organization_info(url, timeout=10, max_retries=1):
         )
     }
 
-    # 1. Fetch with optional retry on 403/429
     attempt = 0
-    resp = None
-    while attempt <= max_retries:
-        try:
-            resp = requests.get(url, timeout=timeout, headers=headers)
-            resp.raise_for_status()
-            break
-        except requests.exceptions.HTTPError as e:
-            code = e.response.status_code if e.response else None
-            if code in (403, 429) and attempt < max_retries:
-                attempt += 1
-                continue
-            return {"logo": None, "description": None}
-        except requests.exceptions.RequestException:
-            return {"logo": None, "description": None}
+    resp_text = None
+    final_url = url
 
-    base = resp.url
-    soup = BeautifulSoup(resp.text, "html.parser")
+    async with aiohttp.ClientSession(headers=headers) as session:
+        while attempt <= max_retries:
+            try:
+                async with session.get(final_url, timeout=timeout) as resp:
+                    resp.raise_for_status()
+                    final_url = str(resp.url)
+                    resp_text = await resp.text()
+                    break
+            except aiohttp.ClientResponseError as e:
+                if e.status in (403, 429) and attempt < max_retries:
+                    attempt += 1
+                    await asyncio.sleep(1)
+                    continue
+                return {"logo": None, "description": None}
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                return {"logo": None, "description": None}
 
+    soup = BeautifulSoup(resp_text, "html.parser")
     description = None
     logo_candidates = []
 
-    # 2. Extract description from JSON-LD
+    # 1. JSON-LD
     for tag in soup.find_all("script", type="application/ld+json"):
         try:
-            data = json.loads(tag.string or "{}")
-        except json.JSONDecodeError:
+            data = __import__("json").loads(tag.string or "{}")
+        except Exception:
             continue
         entries = data if isinstance(data, list) else [data]
         for entry in entries:
             if entry.get("@type") == "Organization":
                 if entry.get("description") and not description:
-                    description = entry.get("description").strip()
+                    description = entry["description"].strip()
                 if entry.get("logo"):
-                    logo_candidates.append(urljoin(base, entry.get("logo")))
+                    logo_candidates.append(urljoin(final_url, entry["logo"]))
         if description and logo_candidates:
             break
 
-    # 3. Fallback description to meta tags
+    # 2. Meta fallbacks
     if not description:
         meta = (
             soup.find("meta", attrs={"name": "description"}) or
@@ -104,49 +95,54 @@ def get_organization_info(url, timeout=10, max_retries=1):
         if meta and meta.get("content"):
             description = meta["content"].strip()
 
-    # 4. Add Open Graph image to candidates
-    og_img = soup.find("meta", property="og:image")
-    if og_img and og_img.get("content"):
-        logo_candidates.append(urljoin(base, og_img["content"]))
+    # 3. Open Graph image
+    og = soup.find("meta", property="og:image")
+    if og and og.get("content"):
+        logo_candidates.append(urljoin(final_url, og["content"]))
 
-    # 5. Gather <img> tags with "logo" in alt/class or svg extension as candidates
+    # 4. <img> candidates
     for img in soup.find_all("img", src=True):
-        src = urljoin(base, img["src"])
+        src = urljoin(final_url, img["src"])
         alt = img.get("alt", "").lower()
-        classes = " ".join(img.get("class", [])).lower()
-        if "logo" in alt or "logo" in classes or src.lower().endswith(".svg"):
+        cls = " ".join(img.get("class", [])).lower()
+        if "logo" in alt or "logo" in cls or src.lower().endswith(".svg"):
             logo_candidates.append(src)
 
-    # 6. Score and pick best candidate
-    def score_asset(asset_url: str) -> int:
-        score = 0
-        u = asset_url.lower()
-        if "logo" in u:
-            score += 2
-        if u.endswith(".svg") or ".svg?" in u:
-            score += 1
-        return score
+    # 5. Dedupe & score
+    def score(u: str):
+        s = 0
+        low = u.lower()
+        if "logo" in low:
+            s += 2
+        if low.endswith(".svg") or ".svg?" in low:
+            s += 1
+        return s
 
-    # Remove duplicates while preserving order
+    unique = []
     seen = set()
-    unique_candidates = []
     for c in logo_candidates:
         if c not in seen:
             seen.add(c)
-            unique_candidates.append(c)
+            unique.append(c)
 
-    chosen_logo = None
-    if unique_candidates:
-        # sort by descending score, preserve first order on tie
-        unique_candidates.sort(key=lambda u: score_asset(u), reverse=True)
-        chosen_logo = unique_candidates[0]
+    if unique:
+        unique.sort(key=score, reverse=True)
+        chosen = unique[0]
+    else:
+        chosen = None
 
-    return {"logo": chosen_logo, "description": description}
+    return {"logo": chosen, "description": description}
+
+
+async def main():
+    # Example usage
+    results = await search_urls("DataKind", num_results=1)
+    if results:
+        info = await get_organization_info(results[0])
+        print("URL:", results[0])
+        print("Logo:", info["logo"])
+        print("Description:", info["description"])
 
 
 if __name__ == "__main__":
-    test_url = search_urls("Habitat for Humanity ReStore")[0]
-    info = get_organization_info(test_url)
-    print("URL:", test_url)
-    print("Logo:", info["logo"])
-    print("Description:", info["description"])
+    asyncio.run(main())

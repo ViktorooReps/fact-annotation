@@ -154,13 +154,13 @@ async def _enrich_entity(
 
     # Fallback: search official URL if missing (not yet implemented)
     if not official_site:
-        official_url = search_urls(name)[0]
+        official_url = (await search_urls(name))[0]
     else:
         official_url = official_site
 
     # Fetch description and logo from official URL if missing
     if official_url:
-        org_info = get_organization_info(official_url)
+        org_info = await get_organization_info(official_url)
         if not result.get("description") and org_info.get("description"):
             description = org_info["description"]
         else:

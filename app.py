@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import dataclasses
 import re
@@ -673,7 +674,7 @@ if "df" in st.session_state:
                 df.at[row_index, column_name].append(dataclasses.asdict(e))
                 st.session_state.gs_synced = False
 
-            def new_entity_widget():
+            def new_entity_widget(search_term):
                 with st.container(border=True):
                     entity_column, select_column = st.columns([5, 1])
 
@@ -689,8 +690,8 @@ if "df" in st.session_state:
                     )
 
                 if google_lookup:
-                    url = search_urls(alias)[0]
-                    info = get_organization_info(url)
+                    url = asyncio.run(search_urls(search_term))[0]
+                    info = asyncio.run(get_organization_info(url))
                     entity_new = Entity(
                         name=alias,
                         type=entity_type,
@@ -766,7 +767,7 @@ if "df" in st.session_state:
 
                                 entity_option_widget(entity_opt, option_idx)
 
-                    new_entity_widget()
+                    new_entity_widget(search_term)
 
                 choose_wiki_entity()
 
