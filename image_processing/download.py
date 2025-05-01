@@ -19,7 +19,9 @@ def load_from_url(url: str, *, timeout: int = 4) -> Image.Image:
       requests.HTTPError on bad HTTP status.
       cairosvg.exceptions.CairoSVGError on invalid SVG.
     """
-    headers = {"User-Agent": USER_AGENT}
+    headers = {
+        "User-Agent": USER_AGENT
+    }
     r = requests.get(url, timeout=timeout, headers=headers)
     r.raise_for_status()
 

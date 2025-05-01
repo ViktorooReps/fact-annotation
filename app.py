@@ -6,20 +6,22 @@ from collections import defaultdict
 from functools import partial
 
 import streamlit as st
+from duckduckgo_search import DDGS
+
+st.set_page_config(page_title="Fact Annotator", layout="wide", page_icon=":material/edit_note:")
+
 import pandas as pd
 import json, base64
-from typing import List, Iterable
+from typing import List
 
 from commons.datamodel import Entity, BiDirectionalRelation, merge_entities, disambiguate_entities, \
     disambiguate_relations, fuzzy_find_entity_by_alias
 from image_processing.logo_preprocess import logo_to_url, NO_IMG_THUMB
-from integrations.customsearch_api import search_urls, get_organization_info
+from commons.website_parsing import get_organization_info
 from widgets.entity_graph import draw_entity_graph
-from integrations.wikipedia import entity_lookup_sync
+from integrations.wikipedia import entity_lookup_sync, verify_logo
 
 from streamlit_theme import st_theme
-
-st.set_page_config(page_title="Fact Annotator", layout="wide", page_icon=":material/edit_note:")
 
 # Third‑party component for cookies
 from streamlit_cookies_manager import CookieManager
@@ -115,6 +117,9 @@ if not use_gs:
             "Upload a CSV file", type=["csv"], accept_multiple_files=False
         )
 
+gs_salt = auto_sheet_id if auto_sheet_id is not None else ""
+source_salt = str(uploaded_file) if uploaded_file is not None and not use_gs else gs_salt
+
 # ---------------------------------------------------------------------------
 # 2. Worksheet selector (if URL present) -------------------------------------
 
@@ -143,6 +148,8 @@ if auto_sheet_id:
             info_container = st.container()
 
             def _update_counter():
+                if "ws_refresh_counter" not in st.session_state:
+                    st.session_state.ws_refresh_counter = 0
                 st.session_state.ws_refresh_counter += 1
 
             with refresh_col:
@@ -157,8 +164,11 @@ if auto_sheet_id:
                 selected_ws = st.selectbox(
                     "Worksheet to load / save",
                     worksheet_names,
-                    key="worksheet_select",
+                    key="worksheet_select" + gs_salt,
                 )
+
+            global source_salt
+            source_salt += selected_ws if selected_ws and use_gs else ""
 
             with save_col:
                 def _save_df():
@@ -224,7 +234,6 @@ if (
     if df_loaded is not None:
         st.session_state.df = df_loaded
         st.session_state._source_sig = source_signature
-        st.session_state.pop("row_selector", None)
 
 # ---------------------------------------------------------------------------
 # 4. Annotation UI -----------------------------------------------------------
@@ -259,7 +268,7 @@ def highlight_matches(
     ----------
     text : str
         The original text.
-    aliases : Iterable[str]
+    color2aliases : dict[str, list[str]]
         Words/phrases to underline if they occur in *text*.
     case_sensitive : bool, default False
         If False, matching is case-insensitive.
@@ -296,7 +305,6 @@ if "df" in st.session_state:
     def updatable_elements():
         df = st.session_state.df
 
-        export_container = st.container(border=True)
         data_view_container = st.container(border=True)
         data_modification_container = st.container(border=True)
         annotation_container = st.container(border=True)
@@ -310,8 +318,8 @@ if "df" in st.session_state:
         if "entity_types" not in st.session_state or st.session_state.entity_types is None:
             st.session_state.entity_types = entity_types
         else:
-            for entity_type in st.session_state.entity_types:
-                column_name = f"{entity_type}_entity"
+            for selected_entity_type in st.session_state.entity_types:
+                column_name = f"{selected_entity_type}_entity"
                 if column_name not in df.columns:
                     df[column_name] = [[] for _ in range(len(df))]
         st.session_state.entity_types = sorted(set(st.session_state.entity_types))
@@ -466,8 +474,12 @@ if "df" in st.session_state:
                 else:
                     st.markdown(label + suffix)
 
+        global source_salt
         with data_view_container:
             show_columns = [col for col in df.columns if not filter_json_columns(col)]
+            columns_sep = "<|COLUMNS|>:"
+            if columns_sep not in source_salt:
+                source_salt += columns_sep + ','.join(show_columns) + str(len(df))
             with st.expander("Data preview", expanded=True):
                 st.dataframe(df[show_columns], height=200)
 
@@ -486,8 +498,8 @@ if "df" in st.session_state:
                     disabled_ent_type = (not new_type) or new_type in st.session_state.entity_types
 
                     def _submit_entity_type():
-                        st.session_state.entity_types.append(st.session_state.add_entity_type)
-                        st.session_state.add_entity_type = ''
+                        st.session_state.entity_types.append(st.session_state.new_entity_type_name)
+                        st.session_state.new_entity_type_name = ''
 
                     with entity_add_columns[1]:
                         st.button(
@@ -523,66 +535,72 @@ if "df" in st.session_state:
                             disabled=disabled_rel_type
                         )
 
-        first_open_row = (
-            int(df.index[df["Completed"] == False][0])
-            if (df["Completed"] == False).any()
-            else 0
-        )
-        if "row_selector" not in st.session_state:
-            st.session_state.row_selector = first_open_row
-
         with data_modification_container:
             col_entity_picker, col_md = st.columns([1, 3], gap="small")
 
         with col_md:
             col_field, col_index, col_compl = st.columns([1, 1, 1], gap="large", vertical_alignment="bottom")
             with col_field:
-                annotatable_columns = [c for c in df.columns if c != "Completed" and not filter_json_columns(c)]
-                field = st.selectbox(
+                field_selector_key = "field_selector" + source_salt
+                annotatable_columns = [
+                    c for c in df.columns
+                    if c != "Completed" and not filter_json_columns(c) and df.loc[:, c].dtype in ["O", str]
+                ]
+                selected_field = st.selectbox(
                     "Field (column) to annotate",
                     annotatable_columns,
-                    key="field_selector",
+                    key=field_selector_key,
                 )
+
             with col_index:
+                row_selector_key = "row_selector" + source_salt
+                first_open_row = (
+                    int(df.index[df["Completed"] == False][0])
+                    if (df["Completed"] == False).any()
+                    else 0
+                )
+                if row_selector_key not in st.session_state:
+                    st.session_state[row_selector_key] = first_open_row
+
                 max_row = len(df) - 1
-                row_index = st.number_input(
+                selected_row = st.number_input(
                     "Row index",
                     min_value=0,
                     max_value=max_row,
                     step=1,
-                    key="row_selector",
+                    key=row_selector_key,
                     format="%d",
                 )
-                row_index = int(row_index)
+                selected_row = int(selected_row)
             with col_compl:
-                completed_key = f"completed_checkbox_{row_index}"
+                completed_key = f"completed_checkbox_{selected_row}" + source_salt
 
                 def switch_df_value():
-                    df.at[row_index, "Completed"] = ~df.at[row_index, "Completed"]
+                    df.at[selected_row, "Completed"] = ~df.at[selected_row, "Completed"]
                     st.session_state.gs_synced = False
 
-                st.checkbox(
+                is_row_completed = st.checkbox(
                     "Completed",
                     key=completed_key,
-                    value=bool(df.at[row_index, "Completed"]),
+                    value=bool(df.at[selected_row, "Completed"]),
                     on_change=switch_df_value,
                 )
 
         local_ent_dicts = []
         for ent_type in st.session_state.entity_types:
             column_name = f"{ent_type}_entity"
-            local_ent_dicts.extend(df.at[st.session_state.row_selector, column_name])
+            local_ent_dicts.extend(df.at[st.session_state[row_selector_key], column_name])
 
-        salt = f'_{st.session_state.field_selector}_{st.session_state.row_selector,}'
+        salt = f'_{selected_field}_{selected_row}'
 
         local_entities = disambiguate_entities([Entity(**ent_dict) for ent_dict in local_ent_dicts])
         # store disambiguated entities in the df
         for ent_type in st.session_state.entity_types:
             column_name = f"{ent_type}_entity"
             filtered_entities = list(filter(lambda e: e.type == ent_type, local_entities))
-            current_entities = [Entity(**ent_dict) for ent_dict in df.at[st.session_state.row_selector, column_name]]
+            current_entities = [Entity(**ent_dict) for ent_dict in df.at[selected_row, column_name]]
             if tuple(sorted(filtered_entities)) != tuple(sorted(current_entities)):
-                df.at[st.session_state.row_selector, column_name] = [
+                df.at[selected_row, column_name] = [
                     dataclasses.asdict(ent) for ent in filtered_entities
                 ]
                 st.session_state.gs_synced = False
@@ -599,7 +617,7 @@ if "df" in st.session_state:
         local_rel_dicts = []
         for rel in st.session_state.relation_types:
             column_name = f"{rel}_relation"
-            local_rel_dicts.extend(df.at[st.session_state.row_selector, column_name])
+            local_rel_dicts.extend(df.at[selected_row, column_name])
 
         local_relations = disambiguate_relations([BiDirectionalRelation(**rel_dict) for rel_dict in local_rel_dicts])
 
@@ -607,9 +625,9 @@ if "df" in st.session_state:
         for rel_type in st.session_state.relation_types:
             column_name = f"{rel_type}_relation"
             filtered_relations = list(filter(lambda r: r.type == rel_type, local_relations))
-            current_relations = [BiDirectionalRelation(**rel_dict) for rel_dict in df.at[st.session_state.row_selector, column_name]]
+            current_relations = [BiDirectionalRelation(**rel_dict) for rel_dict in df.at[selected_row, column_name]]
             if True or tuple(sorted(filtered_relations)) != tuple(sorted(current_relations)):
-                df.at[st.session_state.row_selector, column_name] = [
+                df.at[selected_row, column_name] = [
                     dataclasses.asdict(rel) for rel in filtered_relations
                 ]
                 st.session_state.gs_synced = False
@@ -636,16 +654,16 @@ if "df" in st.session_state:
                     draw_entity_graph(target_entities, target_relations, theme=theme)
 
         text = ''
-        if field:
-            text = df.at[st.session_state.row_selector, field]
+        if selected_field:
+            text = df.at[selected_row, selected_field]
 
         with col_entity_picker:
             st.subheader("Add alias")
             col_type, col_mode = st.columns([2, 1], vertical_alignment="top")
             with col_type:
-                entity_type = st.selectbox(
+                selected_entity_type = st.selectbox(
                     "Entity type",
-                    key="entity_type_selection",
+                    key="entity_type_selection" + source_salt,
                     options=st.session_state.entity_types
                 )
 
@@ -664,14 +682,14 @@ if "df" in st.session_state:
                     default="Search"
                 )
 
-            column_name = f"{entity_type}_entity"
+            column_name = f"{selected_entity_type}_entity"
 
             col_edit, col_add = st.columns([4, 1], vertical_alignment="bottom")
             with col_edit:
-                alias = st.text_input("Alias", key="alias_edit" + salt)
+                alias = st.text_input("Alias", key="alias_edit" + source_salt + salt)
 
             def add_entity(e: Entity):
-                df.at[row_index, column_name].append(dataclasses.asdict(e))
+                df.at[selected_row, column_name].append(dataclasses.asdict(e))
                 st.session_state.gs_synced = False
 
             def new_entity_widget(search_term):
@@ -679,29 +697,45 @@ if "df" in st.session_state:
                     entity_column, select_column = st.columns([5, 1])
 
                 with select_column:
-                    if "google_lookup" not in st.session_state:
-                        st.session_state.google_lookup = True
-                    google_lookup = st.pills(
+                    if "ddgs_lookup" not in st.session_state:
+                        st.session_state.ddgs_lookup = None
+                    ddgs_lookup = st.pills(
                         "Find",
                         [True],
-                        key="google_lookup",
-                        help="Look up best match on Google",
+                        key="ddgs_lookup",
+                        help="Look up best match on DuckDuckGoSearch",
                         format_func=lambda _: ":material/search:",
                     )
 
-                if google_lookup:
-                    url = asyncio.run(search_urls(search_term))[0]
-                    info = asyncio.run(get_organization_info(url))
+                if ddgs_lookup:
+                    search_engine = DDGS()
+
+                    ddgs_result = search_engine.text(keywords=search_term, max_results=1)[0]
+                    url = ddgs_result.get("href")
+                    description = ddgs_result.get("body")
+
+                    ddgs_result = search_engine.images(keywords=search_term, max_results=1)[0]
+                    image = ddgs_result.get("image")
+
+                    if not description or not image:
+                        info = asyncio.run(get_organization_info(url))
+
+                        if description is None:
+                            description = info.get("description")
+
+                        if image is None:
+                            image = info.get("image")
+
                     entity_new = Entity(
                         name=alias,
-                        type=entity_type,
+                        type=selected_entity_type,
                         id=url,
                         url=url,
-                        thumbnail=info["logo"],
-                        description=info["description"]
+                        thumbnail=image if verify_logo(image) else None,
+                        description=description,
                     )
                 else:
-                    entity_new = Entity(name=alias, type=entity_type, thumbnail=NO_IMG_THUMB)
+                    entity_new = Entity(name=alias, type=selected_entity_type, thumbnail=NO_IMG_THUMB)
 
                 with entity_column:
                     visualize_new_entity(entity_new)
@@ -727,7 +761,7 @@ if "df" in st.session_state:
                         st.rerun()
 
             def _edit_entity():
-                @st.dialog(f"Choose entity for {alias} ({entity_type})")
+                @st.dialog(f"Choose entity for {alias} ({selected_entity_type})")
                 def choose_entity():
                     search_term = st.text_input(":material/edit: Entities search term:", value=alias)
                     options: list[Entity] = fuzzy_find_entity_by_alias(search_term, global_entities)
@@ -745,7 +779,7 @@ if "df" in st.session_state:
                 choose_entity()
 
             def _look_up_entity():
-                @st.dialog(f"Choose entity for {alias} ({entity_type})")
+                @st.dialog(f"Choose entity for {alias} ({selected_entity_type})")
                 def choose_wiki_entity():
                     search_term = st.text_input(":material/language: Wikipedia search term:", value=alias)
                     options = entity_lookup_sync(search_term)
@@ -757,7 +791,7 @@ if "df" in st.session_state:
                             for option_idx, option in enumerate(options):
                                 entity_opt = Entity(
                                     name=option.get("name", alias),
-                                    type=entity_type,
+                                    type=selected_entity_type,
                                     id=option.get("id"),
                                     description=option.get("description"),
                                     url=option.get("url"),
@@ -780,7 +814,7 @@ if "df" in st.session_state:
             elif add_alias_mode is None:
                 st.warning(":material/warning: Select add mode")
                 alias_ready = False
-            elif entity_type is None:
+            elif selected_entity_type is None:
                 st.warning(":material/warning: Configure entity type")
                 alias_ready = False
             elif alias not in text:
@@ -805,7 +839,7 @@ if "df" in st.session_state:
                 # if alias is in local, then it has been already added
                 if existing_alias not in alias2local_entities and existing_alias in text:
                     potential_matches.extend(filter(
-                        lambda e: e.type == entity_type,
+                        lambda e: e.type == selected_entity_type,
                         alias2global_entities[existing_alias]
                     ))
             potential_matches = disambiguate_entities(potential_matches)
@@ -825,7 +859,7 @@ if "df" in st.session_state:
                     )
 
                     def add_entity(e: Entity):
-                        df.at[row_index, column_name].append(dataclasses.asdict(e))
+                        df.at[selected_row, column_name].append(dataclasses.asdict(e))
                         st.session_state.gs_synced = False
 
                     with thumb_col:
@@ -837,12 +871,15 @@ if "df" in st.session_state:
                         )
 
             with col_md:
-                if field:
+                if selected_field:
                     color_code = {'red': alias2local_entities.keys()}
                     if alias_ready:
                         color_code['blue'] = [alias]
 
-                    text_md = highlight_matches(text, color_code)
+                    text_md = highlight_matches(
+                        text.replace("$", "\\$").replace("`", "'"),
+                        color_code
+                    )
 
                     with st.container(height=678, border=True):
                         st.markdown(text_md, unsafe_allow_html=True)  # allow html for underline
@@ -871,7 +908,7 @@ if "df" in st.session_state:
                 from_entity = st.selectbox(
                     "From entity",
                     from_selection,
-                    key="relation_from_entity" + salt
+                    key="relation_from_entity" + source_salt + salt
                 )
             with to_ent:
                 if from_entity is not None:
@@ -897,13 +934,13 @@ if "df" in st.session_state:
                 to_entity = st.selectbox(
                     "To entity",
                     valid_targets,
-                    key="relation_to_entity" + salt,
+                    key="relation_to_entity" + source_salt + salt,
                     disabled=from_entity is None
                 )
 
             def _submit_relation():
                 column_name = f"{relation_type}_relation"
-                df.at[row_index, column_name].append(dataclasses.asdict(BiDirectionalRelation(
+                df.at[selected_row, column_name].append(dataclasses.asdict(BiDirectionalRelation(
                     from_id=from_entity.id,
                     to_id=to_entity.id,
                     type=relation_type,
@@ -912,10 +949,10 @@ if "df" in st.session_state:
 
             def _delete_relation():
                 column_name = f"{relation_type}_relation"
-                before = df.at[row_index, column_name]
+                before = df.at[selected_row, column_name]
                 after = filter(lambda r: r.from_id != from_entity.id or r.to_id != to_entity.id, before)
-                df.at[row_index, column_name].clear()
-                df.at[row_index, column_name].extend(after)
+                df.at[selected_row, column_name].clear()
+                df.at[selected_row, column_name].extend(after)
                 st.session_state.gs_synced = False
 
             action = _submit_relation if action_type == "Add" else _delete_relation
@@ -962,24 +999,24 @@ if "df" in st.session_state:
                             visualize_new_entity(ent, thumb_column=thumb_col, description_column=desc_col)
 
                             with action_col:
-                                def delete_entity():
+                                def delete_entity(e: Entity):
                                     st.session_state.gs_synced = False
 
                                     target_column = f"{ent.type}_entity"
-                                    before = df.at[row_index, target_column]
+                                    before = df.at[selected_row, target_column]
                                     after = list(filter(lambda d: d["id"] != ent.id, before))
-                                    df.at[row_index, column_name].clear()
-                                    df.at[row_index, column_name].extend(after)
+                                    df.at[selected_row, column_name].clear()
+                                    df.at[selected_row, column_name].extend(after)
 
                                     for rel_type in st.session_state.relation_types:
                                         target_column = f"{rel_type}_relation"
-                                        before = df.at[row_index, target_column]
+                                        before = df.at[selected_row, target_column]
                                         after = list(filter(
                                             lambda d: d["to_id"] != ent.id and d["from_id"] != ent.id,
                                             before
                                         ))
-                                        df.at[row_index, target_column].clear()
-                                        df.at[row_index, target_column].extend(after)
+                                        df.at[selected_row, target_column].clear()
+                                        df.at[selected_row, target_column].extend(after)
 
                                 if not global_scope:
                                     st.button(
@@ -987,7 +1024,7 @@ if "df" in st.session_state:
                                         help="Delete entity and associated relations",
                                         key=f"delete_{idx}",
                                         type="primary",
-                                        on_click=delete_entity
+                                        on_click=partial(delete_entity, e=ent)
                                     )
 
     updatable_elements()
@@ -1004,12 +1041,7 @@ else:
 _state_snapshot = {
     "gs_url": st.session_state.get("gs_url"),
     "use_gs": st.session_state.get("use_gs"),
-    "worksheet_select": st.session_state.get("worksheet_select"),
-    "row_selector": st.session_state.get("row_selector"),
-    "field_selector": st.session_state.get("field_selector"),
-    "ws_refresh_counter": st.session_state.get("ws_refresh_counter"),
-    "entity_types": st.session_state.get("entity_types"),
-    "relation_types": st.session_state.get("relation_types"),
+    "worksheet_select": st.session_state.get("worksheet_select" + gs_salt),
 }
 try:
     cookies[COOKIE_KEY] = base64.b64encode(json.dumps(_state_snapshot).encode()).decode()

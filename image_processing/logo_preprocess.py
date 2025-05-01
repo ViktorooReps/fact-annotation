@@ -148,33 +148,47 @@ def logo_to_url(
     ./static/, and returns the public URL that Streamlit’s static server
     exposes (e.g.  '/static/<sha256>.png').
     """
-
-    # 1. Location of the static folder (must sit next to your script)
-    static_dir = _app_root() / "static"
-    static_dir.mkdir(exist_ok=True)               # safe if it already exists
-
-    # 2. Get the processed logo (cached by Streamlit)
-    img: Image.Image = preprocess_logo(
-        src,
-        outline_px=outline_px,
-        padding_pct=padding_pct,
-        timeout=timeout,
-        colour=colour,
-        theme=theme,
-    )
-
-    # 3. Hash the final PNG bytes ⇒ deterministic, collision-free filename
-    buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
-    digest = hashlib.sha256(buf.getvalue()).hexdigest()
-    fname = f"hosted{digest}.png"
-    fpath = static_dir / fname
-
-    # 4. Write once, re-use thereafter
-    if not fpath.exists():                      # atomic enough for our use-case
-        fpath.write_bytes(buf.getvalue())
-
-    # 5. Return the URL the rest of your app (or a 3rd-party component)
-    #    can use.  /static/... works both locally and on Streamlit Cloud.
     base_url = "http://localhost:8501/"
+    if src == NO_IMG_THUMB:
+        return f"{base_url}app/{NO_IMG_THUMB}"
+
+    try:
+
+        # 1. Location of the static folder (must sit next to your script)
+        static_dir = _app_root() / "static"
+        static_dir.mkdir(exist_ok=True)               # safe if it already exists
+
+        # 2. Get the processed logo (cached by Streamlit)
+        img: Image.Image = preprocess_logo(
+            src,
+            outline_px=outline_px,
+            padding_pct=padding_pct,
+            timeout=timeout,
+            colour=colour,
+            theme=theme,
+        )
+
+        # 3. Hash the final PNG bytes ⇒ deterministic, collision-free filename
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        digest = hashlib.sha256(buf.getvalue()).hexdigest()
+        fname = f"hosted{digest}.png"
+        fpath = static_dir / fname
+
+        # 4. Write once, re-use thereafter
+        if not fpath.exists():                      # atomic enough for our use-case
+            fpath.write_bytes(buf.getvalue())
+    except Exception as e:
+        if src != NO_IMG_THUMB:
+            return logo_to_url(
+                NO_IMG_THUMB,
+                outline_px=outline_px,
+                padding_pct=padding_pct,
+                timeout=timeout,
+                colour=colour,
+                theme=theme,
+            )
+        else:
+            raise e
+
     return f"{base_url}app/static/{fname}"

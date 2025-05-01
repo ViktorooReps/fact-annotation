@@ -4,39 +4,7 @@ from urllib.parse import urljoin
 import aiohttp
 from bs4 import BeautifulSoup
 
-import streamlit as st
 
-
-@st.cache_data(show_spinner=False)
-async def search_urls(query: str, num_results: int = 1) -> list[str]:
-    """
-    Performs a Google Custom Search for the given query and returns
-    a list of result URLs (best matches), using credentials from Streamlit secrets.
-    """
-    creds = __import__("streamlit").secrets["google_customsearch"]
-    api_key = creds.get("api_key")
-    cse_id = creds.get("cse_id")
-
-    endpoint = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "key": api_key,
-        "cx": cse_id,
-        "q": query,
-        "num": num_results
-    }
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(endpoint, params=params) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-            return [
-                item["link"]
-                for item in data.get("items", [])
-                if item.get("link")
-            ]
-
-
-@st.cache_data()
 async def get_organization_info(url: str, timeout: int = 10, max_retries: int = 1) -> dict:
     """
     Async version: Fetches an organization's logo URL and description from its homepage.
@@ -136,17 +104,3 @@ async def get_organization_info(url: str, timeout: int = 10, max_retries: int = 
         chosen = None
 
     return {"logo": chosen, "description": description}
-
-
-async def main():
-    # Example usage
-    results = await search_urls("DataKind", num_results=1)
-    if results:
-        info = await get_organization_info(results[0])
-        print("URL:", results[0])
-        print("Logo:", info["logo"])
-        print("Description:", info["description"])
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
