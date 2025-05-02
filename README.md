@@ -1,6 +1,8 @@
+<img width="1243" alt="image" src="https://github.com/user-attachments/assets/38b24493-5b66-49be-bf11-d4367345c47c" />
+
 # Fact Annotation
 
-Fact Annotation is a lightweight Streamlit-based tool for semi-structured text annotation, designed for tasks that go beyond traditional Named Entity Recognition. Instead of linking entities directly to their mentions, this tool allows annotators to highlight factual information by associating aliases with abstract "facts" present in the text. It's especially useful for building datasets where the goal is to identify and label information without enforcing strict mention-entity ties — such as disambiguated facts or reference points used in downstream reasoning or retrieval tasks.
+Fact Annotation is a lightweight Streamlit-based tool for semi-structured text annotation, designed for tasks that go beyond traditional Named Entity Recognition. Instead of defining entities based on their mentions in text, this tool allows annotators to highlight mentions of factual information by associating aliases with abstract "facts" present in the text. It's especially useful for building datasets where the goal is to identify and label information without enforcing strict mention-entity ties — such as disambiguated facts or reference points used in downstream reasoning or evaluating information extraction systems.
 
 ---
 
